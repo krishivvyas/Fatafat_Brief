@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { GoogleGenAI } from '@google/genai'
 import { SOURCES } from '../data/published.js'
+import { LANGS } from '../i18n.js'
 
 const SYSTEM = `You write the "Two-Minute Morning Brief" for Ahmedabad's transit leadership (Metro/GMRC, AMTS, Janmarg BRTS).
 Rules:
@@ -54,7 +55,11 @@ function buildPayload(dataset, analysis, today) {
 // Calls the chosen model directly from the browser with the user's own API key.
 // Keys are stored only in this browser's localStorage.
 export async function aiBrief({ provider, apiKey, dataset, analysis, today, signal }) {
-  const prompt = `Data:\n${JSON.stringify(buildPayload(dataset, analysis, today), null, 1)}\n\nWrite the brief.`
+  const lang = LANGS[dataset.lang] ?? LANGS.en
+  const language = dataset.lang && dataset.lang !== 'en'
+    ? ` Write it in ${lang.aiName}. Keep the names AMTS, BRTS and GMRC in Latin letters, write digits as 0-9, and keep the [[ ]] markers.`
+    : ''
+  const prompt = `Data:\n${JSON.stringify(buildPayload(dataset, analysis, today), null, 1)}\n\nWrite the brief.${language}`
   const text = provider === 'gemini' ? await geminiText(apiKey, prompt, signal) : await claudeText(apiKey, prompt, signal)
   if (!text) throw new Error('Empty response')
   return parseMarked(text)

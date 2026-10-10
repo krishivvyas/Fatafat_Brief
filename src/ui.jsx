@@ -1,8 +1,23 @@
-import { fmtInt, fmtDate } from './lib/engine.js'
+import { createContext, useContext, useMemo } from 'react'
+import { fmtInt, fmtDate, fmtRs } from './lib/engine.js'
+import { makeT } from './i18n.js'
 
 export const INDIGO = '#4f46e5'
 export const SLATE = '#94a3b8'
-export const shortDate = (d) => fmtDate(d, { day: 'numeric', month: 'short' })
+
+// Current UI language, plus helpers that format in it.
+export const LangContext = createContext('en')
+export const i18nFor = (lang) => ({
+  lang,
+  t: makeT(lang),
+  date: (iso, opts) => fmtDate(iso, opts, lang),
+  short: (iso) => fmtDate(iso, { day: 'numeric', month: 'short' }, lang),
+  rs: (n) => fmtRs(n, lang),
+})
+export function useI18n() {
+  const lang = useContext(LangContext)
+  return useMemo(() => i18nFor(lang), [lang])
+}
 
 // ---------------- small building blocks ----------------
 export function Card({ className = '', children }) {
@@ -10,14 +25,15 @@ export function Card({ className = '', children }) {
 }
 
 const KIND_STYLE = {
-  day: ['Published (day)', 'bg-emerald-50 text-emerald-700 ring-emerald-200'],
-  derived: ['Derived', 'bg-amber-50 text-amber-700 ring-amber-200'],
-  average: ['Published avg', 'bg-sky-50 text-sky-700 ring-sky-200'],
-  none: ['Not published', 'bg-slate-100 text-slate-500 ring-slate-200'],
+  day: ['kindDay', 'bg-emerald-50 text-emerald-700 ring-emerald-200'],
+  derived: ['kindDerived', 'bg-amber-50 text-amber-700 ring-amber-200'],
+  average: ['kindAverage', 'bg-sky-50 text-sky-700 ring-sky-200'],
+  none: ['kindNone', 'bg-slate-100 text-slate-500 ring-slate-200'],
 }
 export function KindBadge({ kind, title }) {
+  const { t } = useI18n()
   const [label, cls] = KIND_STYLE[kind] ?? KIND_STYLE.none
-  return <span title={title} className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ${cls}`}>{label}</span>
+  return <span title={title} className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ${cls}`}>{t(label)}</span>
 }
 
 export function ChartTip({ active, payload, label, unit = '', fmt = fmtInt }) {
