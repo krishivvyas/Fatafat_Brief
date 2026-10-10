@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
-import { Printer, X, AlertTriangle, Info } from 'lucide-react'
+import { Printer, X, AlertTriangle, Info, Lightbulb } from 'lucide-react'
 import { SOURCES } from './data/published.js'
-import { trends, fmtInt, fmtRs, fmtPct, fmtDate } from './lib/engine.js'
-import { INDIGO, SLATE, shortDate, KindBadge, ChartTip, Segments } from './ui.jsx'
+import { trends, insights, fmtInt, fmtRs, fmtPct, fmtDate } from './lib/engine.js'
+import { INDIGO, SLATE, shortDate, KindBadge, ChartTip, Segments, TONE } from './ui.jsx'
 
 const monthName = (m) => fmtDate(`${m}-01`, { month: 'long', year: 'numeric' })
 const daysInMonth = (m) => new Date(+m.slice(0, 4), +m.slice(5, 7), 0).getDate()
@@ -44,6 +44,18 @@ function Delta({ v }) {
   return <span className={v < 0 ? 'text-red-600' : 'text-emerald-600'}>{fmtPct(v)}</span>
 }
 
+function Insights({ items, title = 'What this means' }) {
+  if (!items?.length) return null
+  return (
+    <div className="rounded-lg border-l-4 border-indigo-400 bg-indigo-50/60 px-4 py-3 break-inside-avoid">
+      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-indigo-900"><Lightbulb className="h-4 w-4" />{title}</h3>
+      <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-6 text-slate-700">
+        {items.map((segs, i) => <li key={i}>{segs.map((s, j) => (s.tone ? <span key={j} className={TONE[s.tone]}>{s.t}</span> : <span key={j}>{s.t}</span>))}</li>)}
+      </ul>
+    </div>
+  )
+}
+
 const Note = ({ children }) => <p className="flex gap-1.5 text-xs text-slate-500"><Info className="mt-0.5 h-3 w-3 shrink-0" />{children}</p>
 
 function Bars({ data, x, y, unit, fmt, height = 'h-44' }) {
@@ -64,6 +76,7 @@ function Bars({ data, x, y, unit, fmt, height = 'h-44' }) {
 
 export default function Report({ dataset, analysis, weather, brief, onClose }) {
   const t = useMemo(() => trends(dataset, weather), [dataset, weather])
+  const ins = useMemo(() => insights(dataset, analysis, t), [dataset, analysis, t])
   const o = dataset.operators
   const [generatedAt] = useState(() => new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' }))
 
@@ -109,6 +122,7 @@ export default function Report({ dataset, analysis, weather, brief, onClose }) {
         <Section id="summary" n={1} title="Executive summary">
           <Segments segs={brief.segs} />
           <p className="text-xs text-slate-400">{brief.note}</p>
+          <Insights title="Key takeaways" items={ins.summary} />
           <Table
             head={['Operator', 'Riders', 'Revenue', 'On-time', 'Share']}
             rows={[
@@ -164,6 +178,7 @@ export default function Report({ dataset, analysis, weather, brief, onClose }) {
                     d.rainMm ?? '—',
                   ])}
                 />
+                <Insights items={ins.daily[k]} />
               </div>
             )
           })}
@@ -205,6 +220,7 @@ export default function Report({ dataset, analysis, weather, brief, onClose }) {
               />
             </div>
           ))}
+          <Insights items={ins.monthly} />
           <Note>AMTS and Janmarg BRTS do not publish monthly ridership or revenue.</Note>
         </Section>
 
@@ -237,6 +253,7 @@ export default function Report({ dataset, analysis, weather, brief, onClose }) {
             <Table head={['Year', 'Avg riders/day', 'Change']} rows={t.avgDaily.map((y) => [y.year, fmtInt(y.riders), <Delta key="c" v={y.change} />])} />
             <p className="mt-1 text-[11px] text-slate-400">2023–2025 are full-year averages; May 2026 is the year-to-date figure (ThePrint/PTI).</p>
           </div>
+          <Insights items={ins.yearly} />
           <Note>AMTS and Janmarg BRTS do not publish year-wise ridership; only the figures in the summary are available.</Note>
         </Section>
 
@@ -253,6 +270,7 @@ export default function Report({ dataset, analysis, weather, brief, onClose }) {
               ))}
             </ul>
           )}
+          <Insights items={ins.gaps} />
           <ul className="space-y-1">
             {analysis.gaps.map((g) => <li key={g} className="flex gap-1.5 text-xs text-amber-800"><AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />{g}</li>)}
           </ul>

@@ -1,26 +1,131 @@
-# Fatafat Brief — Unified Morning Brief (PS-13)
+# Fatafat Brief — Unified Morning Brief for Ahmedabad Transit (PS-13)
 
-One brief that combines Ahmedabad Metro (GMRC), AMTS and Janmarg BRTS data, built on **real published figures only**. No mock or simulated data.
+Fatafat Brief gives Ahmedabad's transit leadership one two-minute morning brief across **Ahmedabad Metro (GMRC)**, **AMTS** and **Janmarg BRTS**, cross-checked against the weather. It reads the numbers, explains *why* they moved, and turns them into a dashboard, a full printable report, and ready-to-send WhatsApp messages.
 
-## Run
+It is built on **real published figures only**. Nothing is mocked or simulated. If an operator has not published a figure, the app says **Not published** rather than guessing.
+
+---
+
+## What it can do
+
+### 1. Morning dashboard
+- **Pick any reporting day:** the date selector in the header lists every day that has data, newest first, and shows which operators reported that day (for example, "Mon, 10 Aug 2026 · Metro + AMTS"). Use **‹ ›** to step to the previous or next day. The dashboard, brief, WhatsApp messages and report all switch to that day. An operator with no figure for the chosen day shows **Not published** and is listed as a data gap. Figures from another day are never used.
+- **System KPIs:** total ridership across all three operators, total revenue, and weather and reliability, each with a small trend chart.
+- **Executive Synthesis:** a 120–170 word plain-English brief that links operators and weather (for example, "heavy rain barely dented Metro demand"). Good news, problems and weather warnings are colour-coded.
+- **Operator cards:** riders, revenue, on-time performance, mode share and key facts (network size, fleet, riders per bus, revenue per rider) for each operator, with source links.
+- **Metro ridership vs rainfall:** paired charts plus the Pearson correlation and the wettest-day comparison.
+- **Published disruptions and data gaps:** dated service disruptions, and a list of which metrics each operator does not publish.
+
+### 2. Full Report & Trends
+Click **Full Report & Trends** to open a printable report (**Print / Save PDF**, A4) with:
+
+| Section | Numbers | Insights ("What this means") |
+|---|---|---|
+| **Executive summary** | Brief, operator table with Published / Derived / Not published labels | Who carries the city, who earns more per trip, record days |
+| **Daily trend** | Day-level ridership, change vs previous reported day, rainfall, event-day peaks | How steady demand is (± band), direction over the period, weekday coverage, rain sensitivity, event-day capacity |
+| **Monthly trend** | Published month totals, average per day, averages of reported days | Whether a monthly drop is real or only fewer days in the month; weekday vs all-day demand |
+| **Yearly trend** | FY trips and revenue, YoY growth, average fare, average daily ridership by year | Growth slowing or holding, compounded annual growth, whether revenue comes from fares or volume |
+| **Disruptions & data gaps** | Incidents and missing metrics | How much of the picture is missing and which operator could close most of it |
+| **Sources** | Every source with its full URL | |
+
+Every insight is **calculated from the data on the page** (`insights()` in `src/lib/engine.js`). There is no fixed text, so when you upload new data the insights change, or are dropped if the data no longer supports them.
+
+### 3. WhatsApp briefs
+- **Ministry WhatsApp Brief:** system ridership, mode share, strategic signals, reporting gaps and today's weather, formatted for WhatsApp.
+- **Ops Team Brief:** exceptions only (disruptions, ridership drops over 5%, heavy rain, high rain probability today, operators missing from the MIS).
+- Each one has **Copy text** and **Open WhatsApp** buttons.
+
+### 4. Load the operators' daily MIS
+Click **Load daily MIS** and upload a CSV. **CSV template** downloads a blank one.
+
+```
+date,operator,riders,revenue_rs,on_time_pct,incident
+2026-10-09,METRO,201000,2500000,99.9,
+2026-10-09,AMTS,612000,3850000,,Bus breakdown on Route 45
+2026-10-09,BRTS,155000,,,
+```
+
+- `operator` is `METRO`, `AMTS` or `BRTS`. Only `date`, `operator` and `riders` are required.
+- Several days per operator build the daily trend, monthly averages and insights in the report.
+- After upload, the latest day opens. Every uploaded day can be picked in the date selector.
+- An operator missing on the chosen day is flagged and uses the published figure for that same day, if there is one. Otherwise it shows *Not published*.
+- **Reset to published** switches back.
+
+### 5. AI brief with offline fallback
+- **Google Gemini** (`gemini-3.5-flash`) is the default. If Gemini is busy (429/500/503) it automatically tries `gemini-flash-latest`, then `gemini-2.5-flash`.
+- **Anthropic Claude** (`claude-opus-5-5`) can be chosen under **Add AI key**.
+- The AI only gets the numbers on the page and is told never to invent or round figures.
+- **No key, no network, or an API error:** a rule-based generator writes the brief instantly from the same numbers. The badge shows which engine wrote it (Gemini / Claude / Rule engine / Offline / Fallback).
+- **Simulate Network Drop** in the header lets you show offline mode during a demo.
+
+### 6. Live weather
+Rainfall and temperature for Ahmedabad come from **Open-Meteo** (ERA5 archive plus today's forecast). A real snapshot is bundled for offline use, and the dashboard shows whether it is using **Live API** or **Cached** data.
+
+---
+
+## Quick start
+
+**Windows (one click):** double-click `run.bat`. On first run it checks Node.js, installs dependencies, opens http://localhost:5173 and starts the app.
+
+**Any OS:**
 ```
 npm install
 npm run dev
 ```
 
-## Where the data comes from
+Other scripts: `npm run build` (production build into `dist/`), `npm run preview`, `npm run lint` (oxlint).
+
+**AI key (optional):** put `VITE_GEMINI_API_KEY=...` in `.env.local` (git ignores it), or paste a key under **Add AI key**. Keys typed in the app are stored only in that browser's localStorage and take priority over `.env.local`.
+
+> ⚠️ Vite copies `VITE_` variables into the built JavaScript, so anyone visiting a deployed copy can read the key. Use a restricted key for public deploys.
+
+---
+
+## The data
+
+### Data rules
+- **Published (day):** an operator-published figure for that day.
+- **Published avg:** an official average. BRTS does not publish day-level ridership.
+- **Derived:** worked out from published figures, with the method shown. Example: Metro daily revenue = riders × the published Aug 2026 average fare (₹6.81 cr ÷ 54.29 lakh trips).
+- **Not published:** shown as such and listed under *Data gaps*. It is never filled in.
+
+### Sources
 | Data | Source |
 |---|---|
-| Metro daily journeys (23 Jul–10 Aug 2026), FY totals, Aug 2026 revenue, 99.98% punctuality | GMRC via DeshGujarat (14 Aug 2026); Gujarat Samachar 4-year report |
-| Metro network 68.28 km / 54 stations, yearly average daily ridership | ThePrint/PTI (10 Jun 2026) |
+| Metro daily journeys (23 Jul–10 Aug 2026), FY totals, Aug/Sep 2026 totals, 99.98% punctuality | GMRC via DeshGujarat (14 Aug 2026); Gujarat Samachar 4-year report |
+| Metro network 68.28 km / 54 stations, average daily ridership by year, event-day peaks | ThePrint/PTI (10 Jun 2026) |
 | AMTS 10 Aug 2026: 6,31,761 riders, ₹39,77,935, 970 buses | DeshGujarat/IANS (12 Aug 2026) |
 | BRTS 1,50,000/day avg, 101 km, 250 buses, 163 stations | janmarg.in "BRTS in Numbers" (official, undated) |
 | Disruption: Tiranga Yatra route changes, 12 Aug 2026 | Gujarat Samachar |
-| Rainfall / temperature, today's forecast | Open-Meteo API (fetched live; a real snapshot is kept for offline use) |
+| Rainfall / temperature, today's forecast | Open-Meteo API (live, with a cached snapshot) |
 
-The links are in `src/data/published.js` and on the dashboard. If an operator has not published a figure, the app shows **Not published** and lists it under *Data gaps*. Metro daily revenue is the one derived figure: riders × the published Aug 2026 average fare. It is labelled *Derived*.
+Full links are in `src/data/published.js`, on the dashboard, and at the end of the report.
 
-**Live operations:** click **Load daily MIS** and upload the operators' actual previous-day CSV (`date,operator,riders,revenue_rs,on_time_pct,incident`). The upload replaces the published figures.
+### Known gaps in public data
+- AMTS publishes one recent day (10 Aug 2026), with no daily series and no on-time performance.
+- Janmarg BRTS publishes only an average, with no daily ridership, revenue or on-time performance.
+- Metro monthly totals are available for Aug and Sep 2026 only.
+
+These gaps are why the daily MIS upload exists. With operator CSVs, every section of the report fills in for all three operators.
+
+---
+
+## Project structure
+
+```
+src/
+  App.jsx            Dashboard, modals, upload, AI/offline orchestration
+  Report.jsx         Full Report & Trends page (print / PDF)
+  ui.jsx             Shared UI pieces (cards, badges, chart tooltip, highlighted text)
+  lib/engine.js      Formatting, weather fetch, dataset build, CSV import,
+                     analysis, trends, insights, rule-based brief, WhatsApp text
+  lib/ai.js          Gemini / Claude calls, grounded prompt, model fallback chain
+  data/published.js  Every published figure with its source
+run.bat              One-click Windows launcher
+```
+
+## Tech stack
+React 19 · Vite 8 · Tailwind CSS 4 · Recharts · lucide-react · oxlint
 
 ## Google products used
 | Product | Where | What it does |
@@ -28,11 +133,12 @@ The links are in `src/data/published.js` and on the dashboard. If an operator ha
 | **Gemini API** (`gemini-3.5-flash`, `@google/genai` SDK) | `src/lib/ai.js` | Default AI engine that writes the Executive Synthesis. Key from [Google AI Studio](https://aistudio.google.com/apikey). |
 | **Google Fonts** (Inter) | `index.html`, `src/index.css` | UI typeface. Falls back to system fonts when offline. |
 
-**Gemini key:** put `VITE_GEMINI_API_KEY=...` in `.env.local`. Git already ignores that file. A key typed under **Add AI key** takes priority over it. Vite copies `VITE_` variables into the built JavaScript, so anyone visiting a deployed copy can read the key. Use a restricted key for public deploys.
+---
 
-Anthropic Claude (`claude-opus-5-5`) can be picked instead of Gemini under **Add AI key**.
+## Roadmap: automatic data pipeline
+The CSV format above is the app's single input format. The next step is to fill it automatically:
 
-## Resilience
-- Online + API key → Gemini (default) or Claude writes the brief using only the numbers on the page.
-- No key, network drop, or API error → the rule-based generator returns the brief straight away from the same numbers.
-- Weather falls back to the cached Open-Meteo snapshot.
+1. **Adapters:** one per operator. Each reads that operator's raw export (Excel, CSV, email or API) and maps it to the CSV columns.
+2. **Checks:** reject bad dates, negative or 10× jumps in riders, and missing operators. Flag them instead of publishing them.
+3. **Output:** write `public/data/latest.csv`, which the app loads on startup, falling back to published figures.
+4. **Schedule:** a daily job (for example, GitHub Actions at about 6 AM IST) builds and redeploys, so the brief is ready before leadership opens it.

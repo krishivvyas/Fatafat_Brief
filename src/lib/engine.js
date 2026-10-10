@@ -54,24 +54,43 @@ function weatherOn(weather, date) {
 }
 
 // ---------- dataset ----------
-// The default dataset is built purely from published figures. An operator can
-// load their own MIS CSV to replace it with the actual previous-day numbers.
-export function publishedDataset() {
+// The default dataset is built purely from published figures for the chosen day.
+// An operator that published nothing for that day shows as "Not published".
+// Operators can load their own MIS CSV to replace it with actual daily numbers.
+const PUBLISHED_DATES = [...new Set([...METRO.dailySeries.map((d) => d.date), AMTS.referenceDay.date])].sort()
+
+// Dates the user can report on, newest first, with the operators that have day figures.
+export function availableDates(rows) {
+  if (rows) {
+    const by = {}
+    for (const r of rows) (by[r.date] ??= new Set()).add(r.operator)
+    return Object.keys(by).sort().reverse().map((date) => ({ date, operators: ['METRO', 'AMTS', 'BRTS'].filter((k) => by[date].has(k)) }))
+  }
+  return PUBLISHED_DATES.slice().reverse().map((date) => ({
+    date,
+    operators: [METRO.dailySeries.some((d) => d.date === date) && 'METRO', AMTS.referenceDay.date === date && 'AMTS'].filter(Boolean),
+  }))
+}
+
+export function publishedDataset(date = REFERENCE_DATE) {
   const series = METRO.dailySeries
-  const ref = series.find((d) => d.date === REFERENCE_DATE)
+  const ref = series.find((d) => d.date === date)
+  const amts = AMTS.referenceDay.date === date ? AMTS.referenceDay : null
   const aug = METRO.august2026
   const avgFare = (aug.revenueCr * 1e7) / (aug.passengersLakh * 1e5)
+  const notPublished = `Not published for ${fmtDate(date)}`
   return {
-    date: REFERENCE_DATE,
+    date,
     origin: 'published',
     operators: {
       METRO: {
         label: 'Metro',
-        riders: ref.riders,
-        ridersKind: 'day',
-        revenueRs: ref.riders * avgFare,
-        revenueKind: 'derived',
-        revenueNote: `Riders × ₹${avgFare.toFixed(2)} avg fare (Aug 2026: ₹${aug.revenueCr} cr / ${aug.passengersLakh} lakh trips)`,
+        riders: ref?.riders ?? null,
+        ridersKind: ref ? 'day' : 'none',
+        ridersNote: ref ? undefined : notPublished,
+        revenueRs: ref ? ref.riders * avgFare : null,
+        revenueKind: ref ? 'derived' : 'none',
+        revenueNote: ref ? `Riders × ₹${avgFare.toFixed(2)} avg fare (Aug 2026: ₹${aug.revenueCr} cr / ${aug.passengersLakh} lakh trips)` : undefined,
         otpPct: METRO.punctualityPct,
         otpNote: 'Punctuality reported for Oct 2022–Sep 2026',
         series,
@@ -85,20 +104,23 @@ export function publishedDataset() {
       },
       AMTS: {
         label: 'AMTS',
-        riders: AMTS.referenceDay.riders,
-        ridersKind: 'day',
-        revenueRs: AMTS.referenceDay.revenueRs,
-        revenueKind: 'day',
+        riders: amts?.riders ?? null,
+        ridersKind: amts ? 'day' : 'none',
+        ridersNote: amts ? undefined : `${notPublished}; AMTS has published day figures only for ${fmtDate(AMTS.referenceDay.date)}`,
+        revenueRs: amts?.revenueRs ?? null,
+        revenueKind: amts ? 'day' : 'none',
         otpPct: null,
         otpNote: 'AMTS does not publish on-time performance',
         series: [],
         facts: [
-          ['Buses operated', fmtInt(AMTS.referenceDay.busesOperated)],
-          ['Riders per bus', fmtInt(AMTS.referenceDay.riders / AMTS.referenceDay.busesOperated)],
-          ['Revenue per rider', `₹${(AMTS.referenceDay.revenueRs / AMTS.referenceDay.riders).toFixed(2)}`],
+          ...(amts ? [
+            ['Buses operated', fmtInt(amts.busesOperated)],
+            ['Riders per bus', fmtInt(amts.riders / amts.busesOperated)],
+            ['Revenue per rider', `₹${(amts.revenueRs / amts.riders).toFixed(2)}`],
+          ] : []),
           ['E-buses on order', fmtInt(AMTS.electricBusesOrdered)],
         ],
-        highlight: AMTS.referenceDay.note,
+        highlight: amts?.note,
         sources: [AMTS.source],
       },
       BRTS: {
@@ -129,7 +151,8 @@ export const CSV_TEMPLATE =
   'date,operator,riders,revenue_rs,on_time_pct,incident\n' +
   'YYYY-MM-DD,METRO,,,,\nYYYY-MM-DD,AMTS,,,,\nYYYY-MM-DD,BRTS,,,,\n'
 
-export function datasetFromCsv(text, base) {
+// Returns the valid rows (operator upper-cased); throws on an unusable file.
+export function parseMisCsv(text) {
   const lines = text.trim().split(/\r?\n/).filter(Boolean)
   const header = lines.shift().split(',').map((h) => h.trim().toLowerCase())
   const need = ['date', 'operator', 'riders']
@@ -141,27 +164,34 @@ export function datasetFromCsv(text, base) {
       // the incident column may itself contain commas
       o[h] = h === 'incident' ? cells.slice(i).join(',').trim() : (cells[i] ?? '').trim()
     })
+    o.operator = o.operator.toUpperCase()
     return o
   })
-  const valid = rows.filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.date) && ['METRO', 'AMTS', 'BRTS'].includes(r.operator.toUpperCase()))
+  const valid = rows.filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.date) && ['METRO', 'AMTS', 'BRTS'].includes(r.operator))
   if (!valid.length) throw new Error('No valid rows (need date YYYY-MM-DD and operator METRO/AMTS/BRTS)')
-  const latest = valid.map((r) => r.date).sort().at(-1)
-  const ds = structuredClone(base)
-  ds.date = latest
+  return valid
+}
+
+// Builds the dataset for one day of an uploaded MIS (default: the latest day).
+// Operators missing that day fall back to whatever was published for the same day.
+export function datasetFromRows(rows, date = rows.map((r) => r.date).sort().at(-1)) {
+  const ds = publishedDataset(date)
   ds.origin = 'uploaded'
   ds.incidents = []
+  const num = (v) => (v === '' || v == null || isNaN(+v) ? null : +v)
   for (const key of ['METRO', 'AMTS', 'BRTS']) {
-    const opRows = valid.filter((r) => r.operator.toUpperCase() === key).sort((a, b) => a.date.localeCompare(b.date))
-    const day = opRows.filter((r) => r.date === latest)
+    const opRows = rows.filter((r) => r.operator === key).sort((a, b) => a.date.localeCompare(b.date))
+    const day = opRows.filter((r) => r.date === date)
     const op = ds.operators[key]
+    const hist = opRows.map((x) => ({ date: x.date, riders: num(x.riders) })).filter((x) => x.riders != null)
+    if (hist.length > 1) op.series = hist
     if (!day.length) {
       op.stale = true
       continue
     }
     const r = day[0]
-    const num = (v) => (v === '' || v == null || isNaN(+v) ? null : +v)
     op.riders = num(r.riders)
-    op.ridersKind = 'day'
+    op.ridersKind = op.riders == null ? 'none' : 'day'
     op.ridersNote = undefined
     op.revenueRs = num(r.revenue_rs)
     op.revenueKind = op.revenueRs == null ? 'none' : 'day'
@@ -170,8 +200,6 @@ export function datasetFromCsv(text, base) {
     op.otpNote = op.otpPct == null ? 'Not provided in upload' : 'From uploaded MIS'
     op.highlight = undefined
     op.sources = ['upload']
-    const hist = opRows.map((x) => ({ date: x.date, riders: num(x.riders) })).filter((x) => x.riders != null)
-    op.series = hist.length > 1 ? hist : op.series
     day.forEach((d) => d.incident && ds.incidents.push({ date: d.date, operators: [key], severity: 'medium', title: d.incident, detail: '', source: 'upload' }))
   }
   return ds
@@ -213,7 +241,8 @@ export function analyse(ds, weather) {
   // Data-quality exceptions are real findings, not decoration
   const gaps = []
   for (const [k, o] of list) {
-    if (o.ridersKind !== 'day') gaps.push(`${o.label}: no day-level ridership published`)
+    if (o.ridersKind === 'none') gaps.push(`${o.label}: no ridership figure for ${fmtDate(ds.date)}`)
+    else if (o.ridersKind !== 'day') gaps.push(`${o.label}: no day-level ridership published`)
     if (o.revenueKind === 'none') gaps.push(`${o.label}: revenue not published`)
     if (o.otpPct == null) gaps.push(`${o.label}: on-time performance not published`)
     if (o.stale) gaps.push(`${o.label}: missing from uploaded MIS for ${ds.date}`)
@@ -259,6 +288,109 @@ export function trends(ds, weather) {
   return { daily, monthAvg, metroMonths, fy, avgDaily, eventPeaks: METRO.eventPeaks }
 }
 
+// ---------- insights (full report) ----------
+// Plain-language readings of the trend numbers. Every statement is computed from
+// the data passed in, so it changes (or disappears) when the data does.
+// Each insight is a segment list, like ruleBrief.
+const good = (t) => ({ t, tone: 'good' }), bad = (t) => ({ t, tone: 'bad' }), warn = (t) => ({ t, tone: 'warn' })
+const seg = (...parts) => parts.filter(Boolean).map((x) => (typeof x === 'string' ? { t: x } : x))
+const isWeekday = (iso) => ![0, 6].includes(new Date(`${iso}T00:00:00Z`).getUTCDay())
+const short = (iso) => fmtDate(iso, { day: 'numeric', month: 'short' })
+const tone = (v, t) => (v < 0 ? bad(t) : good(t))
+
+export function insights(ds, a, tr) {
+  const o = ds.operators
+  const out = { summary: [], daily: {}, monthly: [], yearly: [], gaps: [] }
+
+  // --- summary: who carries the city, who earns per trip
+  const ranked = Object.values(o).filter((op) => op.riders).sort((x, y) => y.riders - x.riders)
+  if (ranked.length >= 2) {
+    const [top, next] = ranked
+    const backbone = top.label === 'Metro' ? 'Rail is now the backbone of daily travel.' : 'Buses, not rail, are still the backbone of daily travel.'
+    out.summary.push(seg(`${top.label} carries `, good(`${(top.riders / a.totalRiders * 100).toFixed(1)}% of all riders`),
+      ` — ${(top.riders / next.riders).toFixed(1)}× ${next.label}. ${backbone}`))
+  }
+  const earning = Object.values(o).filter((op) => op.revenueRs && op.riders && op.ridersKind === 'day')
+  if (earning.length >= 2) {
+    const per = earning.map((op) => ({ op, v: op.revenueRs / op.riders })).sort((x, y) => y.v - x.v)
+    const totalRev = earning.reduce((s, op) => s + op.revenueRs, 0), totalRid = earning.reduce((s, op) => s + op.riders, 0)
+    const hi = per[0], lo = per.at(-1)
+    out.summary.push(seg(
+      `${hi.op.label} earns ₹${hi.v.toFixed(2)} per rider vs ₹${lo.v.toFixed(2)} for ${lo.op.label} (${(hi.v / lo.v).toFixed(1)}×). `,
+      `${hi.op.label} is ${(hi.op.riders / totalRid * 100).toFixed(0)}% of these riders but `,
+      good(`${(hi.op.revenueRs / totalRev * 100).toFixed(0)}% of the fare revenue`),
+      hi.op.revenueKind === 'derived' ? ` (${hi.op.label} revenue is derived from its average fare).` : '.',
+    ))
+  }
+  for (const op of Object.values(o)) if (op.highlight) out.summary.push(seg(`${op.label}: `, good(op.highlight), '.'))
+
+  // --- daily: stability, direction, weekday coverage, rain, events
+  for (const [k, rows] of Object.entries(tr.daily)) {
+    const L = []
+    const xs = rows.map((d) => d.riders), avg = mean(xs), min = Math.min(...xs), max = Math.max(...xs)
+    const band = ((max - min) / 2 / avg) * 100
+    L.push(seg(`Ridership stayed within a `, band < 5 ? good(`±${band.toFixed(1)}% band`) : warn(`±${band.toFixed(1)}% band`),
+      ` (${fmtInt(min)} to ${fmtInt(max)}) — ${band < 5 ? 'demand is steady and predictable day to day' : 'demand swings noticeably between days'}.`))
+    const first = rows[0], last = rows.at(-1), drift = pctChange(last.riders, first.riders)
+    L.push(seg(`From ${short(first.date)} to ${short(last.date)} ridership moved `, tone(drift, fmtPct(drift)),
+      last.riders === max ? ` and the latest day is the highest of the ${rows.length} reported` : '', '.'))
+    if (rows.every((d) => isWeekday(d.date))) L.push(seg(`All ${rows.length} reported days are weekdays, so this is routine working-day demand; weekends are not covered.`))
+    if (k === 'METRO' && a.wettest && a.rainR != null) {
+      const strength = Math.abs(a.rainR) < 0.3 ? 'weak' : Math.abs(a.rainR) < 0.6 ? 'moderate' : 'strong'
+      L.push(seg(`On the wettest day (${short(a.wettest.date)}, ${a.wettest.w.rainMm} mm) ridership was `, tone(a.wettestVsAvg, `${fmtPct(a.wettestVsAvg)} vs average`),
+        `; the rain–ridership link is ${strength} (r = ${a.rainR.toFixed(2)}). `,
+        strength === 'weak' ? good('Heavy rain barely dents Metro demand') : warn('Rain clearly affects Metro demand'), '.'))
+    }
+    if (k === 'METRO' && tr.eventPeaks.length) {
+      const peak = tr.eventPeaks.reduce((m, e) => (e.riders > m.riders ? e : m))
+      L.push(seg(`Event days go higher: ${peak.label} (${short(peak.date)}) drew ${peak.approx === 'over' ? 'over ' : ''}${fmtInt(peak.riders)}, `,
+        warn(`${pctChange(peak.riders, max).toFixed(1)}% above the busiest routine day`), ' — plan extra trains for match days.'))
+    }
+    out.daily[k] = L
+  }
+
+  // --- monthly: totals vs per-day, month average vs weekday average
+  const mm = tr.metroMonths
+  for (let i = 1; i < mm.length; i++) {
+    const p = mm[i - 1], c = mm[i]
+    const perDay = (m) => (m.passengersLakh * 1e5) / new Date(+m.month.slice(0, 4), +m.month.slice(5, 7), 0).getDate()
+    const dayChange = pctChange(perDay(c), perDay(p))
+    const name = (m) => fmtDate(`${m.month}-01`, { month: 'long' })
+    out.monthly.push(seg(`${name(c)} total trips were `, tone(c.change, fmtPct(c.change)), ` vs ${name(p)}, but per day ridership was `, tone(dayChange, fmtPct(dayChange)),
+      Math.sign(c.change) !== Math.sign(dayChange) ? ` — the drop is mostly because ${name(c)} has fewer days, not weaker demand.` : '.'))
+  }
+  const metroAvg = tr.monthAvg.METRO?.find((m) => mm.some((x) => x.month === m.month))
+  const metroMonth = metroAvg && mm.find((x) => x.month === metroAvg.month)
+  if (metroAvg && tr.daily.METRO?.every((d) => isWeekday(d.date))) {
+    const allDays = (metroMonth.passengersLakh * 1e5) / new Date(+metroMonth.month.slice(0, 4), +metroMonth.month.slice(5, 7), 0).getDate()
+    out.monthly.push(seg(`An average ${fmtDate(`${metroMonth.month}-01`, { month: 'long' })} day carried ${fmtInt(allDays)}, `,
+      warn(`${Math.abs(pctChange(allDays, metroAvg.avg)).toFixed(1)}% below the reported weekday average`), ` (${fmtInt(metroAvg.avg)}), so weekends and holidays must be lighter — spare capacity there could be filled with off-peak offers.`))
+  }
+
+  // --- yearly: growth path, compounding, fares vs volume
+  const fy = tr.fy, yoy = fy.slice(1).map((y) => y.tripsChange)
+  if (yoy.length >= 2) {
+    const slowing = yoy.every((v, i) => i === 0 || v < yoy[i - 1])
+    out.yearly.push(seg(`Year-on-year trip growth: ${yoy.map((v) => fmtPct(v)).join(' → ')}. `,
+      slowing ? warn('Growth is slowing as the network matures') : good('Growth is holding up'), yoy.at(-1) >= 10 ? ', but it is still double-digit.' : '.'))
+    const yrs = fy.length - 1, cagr = (Math.pow(fy.at(-1).passengersLakh / fy[0].passengersLakh, 1 / yrs) - 1) * 100
+    out.yearly.push(seg(`Over ${yrs} years trips grew from ${fy[0].passengersLakh} to ${fy.at(-1).passengersLakh} lakh — `, good(`${(fy.at(-1).passengersLakh / fy[0].passengersLakh).toFixed(1)}×, or ${cagr.toFixed(1)}% a year compounded`), '.'))
+  }
+  const fares = fy.map((y) => y.avgFare), last = fy.at(-1)
+  out.yearly.push(seg(`Average fare stayed between ₹${Math.min(...fares).toFixed(2)} and ₹${Math.max(...fares).toFixed(2)}, and last year revenue grew ${fmtPct(last.revChange)} against trips ${fmtPct(last.tripsChange)} — `,
+    good('revenue growth comes from more riders, not higher fares'), '.'))
+  const ad = tr.avgDaily
+  if (ad.length >= 2) out.yearly.push(seg(`Average daily ridership went from ${fmtInt(ad[0].riders)} (${ad[0].year}) to ${fmtInt(ad.at(-1).riders)} (${ad.at(-1).year}) — `, good(`${(ad.at(-1).riders / ad[0].riders).toFixed(1)}×`), '.'))
+
+  // --- gaps: how much of the picture is missing, and who can close it
+  const metrics = Object.values(o).flatMap((op) => [op.ridersKind === 'day', op.revenueKind !== 'none', op.otpPct != null])
+  const have = metrics.filter(Boolean).length
+  out.gaps.push(seg(`Only `, have < metrics.length ? warn(`${have} of ${metrics.length}`) : good(`${have} of ${metrics.length}`), ` core daily metrics (riders, revenue, on-time for each operator) are available.`))
+  const worst = Object.values(o).map((op) => ({ op, n: a.gaps.filter((g) => g.startsWith(`${op.label}:`)).length })).sort((x, y) => y.n - x.n)[0]
+  if (worst?.n) out.gaps.push(seg(`${worst.op.label} accounts for ${worst.n} of the ${a.gaps.length} gaps — `, bad(`a daily MIS from ${worst.op.label} would close most of the blind spots`), '.'))
+  return out
+}
+
 // ---------- rule-based brief (offline-safe) ----------
 // Returns an array of segments: { t: text, tone?: 'bad' | 'good' | 'warn' }
 export function ruleBrief(ds, a, today) {
@@ -267,18 +399,24 @@ export function ruleBrief(ds, a, today) {
   const p = (t, tone) => seg.push({ t, tone })
 
   p(`Brief for ${fmtDate(ds.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}. `)
-  p(`The three operators moved ${fmtInt(a.totalRiders)} passengers`)
+  const missing = Object.values(o).filter((op) => op.riders == null).map((op) => op.label)
+  p(`The ${missing.length ? 'reporting operators' : 'three operators'} moved ${fmtInt(a.totalRiders)} passengers`)
   p(o.BRTS.ridersKind === 'average' ? ` (BRTS counted at its published average of ${fmtInt(o.BRTS.riders)}). ` : '. ')
+  if (missing.length) p(`${missing.join(' and ')} published no figures for this day, so the total is incomplete. `, 'bad')
 
-  p(`AMTS carried ${fmtInt(o.AMTS.riders)} riders (${a.share.AMTS?.toFixed(1)}% of the system)`)
-  if (o.AMTS.highlight) p(` — ${o.AMTS.highlight.toLowerCase()}`, 'good')
-  if (o.AMTS.revenueRs) p(`, collecting ${fmtRs(o.AMTS.revenueRs)}`)
-  p('. ')
+  if (o.AMTS.riders != null) {
+    p(`AMTS carried ${fmtInt(o.AMTS.riders)} riders (${a.share.AMTS?.toFixed(1)}% of the system)`)
+    if (o.AMTS.highlight) p(` — ${o.AMTS.highlight.toLowerCase()}`, 'good')
+    if (o.AMTS.revenueRs) p(`, collecting ${fmtRs(o.AMTS.revenueRs)}`)
+    p('. ')
+  }
 
-  p(`Metro recorded ${fmtInt(o.METRO.riders)} journeys`)
-  if (a.metroDod != null) p(`, ${fmtPct(a.metroDod)} vs ${fmtDate(a.metroPrev.date, { day: 'numeric', month: 'short' })}`, a.metroDod < 0 ? 'bad' : 'good')
-  if (a.seriesMax?.date === ds.date && o.METRO.series.length > 2) p(' — the highest day in the published series', 'good')
-  p(`; punctuality ${o.METRO.otpPct ?? '—'}%. `)
+  if (o.METRO.riders != null) {
+    p(`Metro recorded ${fmtInt(o.METRO.riders)} journeys`)
+    if (a.metroDod != null) p(`, ${fmtPct(a.metroDod)} vs ${fmtDate(a.metroPrev.date, { day: 'numeric', month: 'short' })}`, a.metroDod < 0 ? 'bad' : 'good')
+    if (a.seriesMax?.date === ds.date && o.METRO.series.length > 2) p(' — the highest day in the published series', 'good')
+    p(`; punctuality ${o.METRO.otpPct ?? '—'}%. `)
+  }
 
   if (a.refWeather) {
     p(`Rainfall was ${a.refWeather.rainMm} mm (max ${a.refWeather.tMax}°C)`, a.refWeather.rainMm >= 20 ? 'warn' : undefined)
@@ -310,14 +448,15 @@ export function ministryWhatsApp(ds, a, today) {
   L.push(`_${fmtDate(ds.date, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}_`)
   L.push('')
   L.push(`*System ridership:* ${fmtInt(a.totalRiders)}${o.BRTS.ridersKind === 'average' ? ' (BRTS at published avg)' : ''}`)
-  L.push(`• 🚌 AMTS: ${fmtInt(o.AMTS.riders)} (${a.share.AMTS?.toFixed(0)}%)${o.AMTS.revenueRs ? ` · ${fmtRs(o.AMTS.revenueRs)}` : ''}`)
-  L.push(`• 🚇 Metro: ${fmtInt(o.METRO.riders)} (${a.share.METRO?.toFixed(0)}%)${a.metroDod != null ? ` · ${fmtPct(a.metroDod)} DoD` : ''}`)
-  L.push(`• 🚍 BRTS: ${fmtInt(o.BRTS.riders)} (${a.share.BRTS?.toFixed(0)}%)${o.BRTS.ridersKind === 'average' ? ' _avg_' : ''}`)
+  const line = (icon, k, extra) => L.push(o[k].riders == null ? `• ${icon} ${o[k].label}: _not published for this day_` : `• ${icon} ${o[k].label}: ${fmtInt(o[k].riders)} (${a.share[k]?.toFixed(0)}%)${extra}`)
+  line('🚌', 'AMTS', o.AMTS.revenueRs ? ` · ${fmtRs(o.AMTS.revenueRs)}` : '')
+  line('🚇', 'METRO', a.metroDod != null ? ` · ${fmtPct(a.metroDod)} DoD` : '')
+  line('🚍', 'BRTS', o.BRTS.ridersKind === 'average' ? ' _avg_' : '')
   L.push('')
   L.push(`*Strategic signals*`)
   if (o.AMTS.highlight) L.push(`✅ AMTS: ${o.AMTS.highlight}`)
   L.push(`📈 Metro FY25-26: ${METRO.yearly[3].passengersLakh} lakh trips (${fmtPct(a.fyGrowth)} YoY), ₹${METRO.yearly[3].revenueCr} cr (${fmtPct(a.fyRevGrowth)})`)
-  L.push(`⏱️ Metro punctuality: ${o.METRO.otpPct}%`)
+  if (o.METRO.otpPct != null) L.push(`⏱️ Metro punctuality: ${o.METRO.otpPct}%`)
   if (a.wettest && a.wettest.w.rainMm >= 20) L.push(`🌧️ Rain-resilience: ${a.wettest.w.rainMm} mm day → Metro ${fmtPct(a.wettestVsAvg)} vs avg`)
   if (a.gaps.length) {
     L.push('')

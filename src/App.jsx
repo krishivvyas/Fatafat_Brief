@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
 import {
   TrainFront, Bus, BusFront, Users, IndianRupee, CloudRain, Sparkles, WifiOff, Wifi, MessageCircle,
-  ClipboardList, X, Copy, Check, Upload, Download, KeyRound, ExternalLink, AlertTriangle, RefreshCw, Database, Info, FileText,
+  ClipboardList, X, Copy, Check, Upload, Download, KeyRound, ExternalLink, AlertTriangle, RefreshCw, Database, Info, FileText, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { SOURCES, METRO } from './data/published.js'
 import {
-  publishedDataset, datasetFromCsv, analyse, ruleBrief, ministryWhatsApp, opsWhatsApp, sourceList, CSV_TEMPLATE,
+  publishedDataset, availableDates, parseMisCsv, datasetFromRows, analyse, ruleBrief, ministryWhatsApp, opsWhatsApp, sourceList, CSV_TEMPLATE,
   fetchWeatherArchive, fetchTodayForecast, weatherSnapshot, fmtInt, fmtRs, fmtPct, fmtDate,
 } from './lib/engine.js'
 import { aiBrief, PROVIDERS } from './lib/ai.js'
@@ -166,9 +166,31 @@ function OperatorCard({ id, op, share }) {
       </dl>
       {op.ridersNote && <p className="mt-3 flex gap-1 text-[11px] text-slate-500"><Info className="mt-0.5 h-3 w-3 shrink-0" />{op.ridersNote}</p>}
       {op.revenueNote && <p className="mt-1 flex gap-1 text-[11px] text-slate-500"><Info className="mt-0.5 h-3 w-3 shrink-0" />{op.revenueNote}</p>}
-      {op.stale && <p className="mt-2 flex gap-1 text-[11px] text-red-600"><AlertTriangle className="h-3 w-3" />Not in uploaded MIS — showing published figures</p>}
+      {op.stale && <p className="mt-2 flex gap-1 text-[11px] text-red-600"><AlertTriangle className="h-3 w-3" />{op.riders == null ? 'Not in uploaded MIS for this day' : 'Not in uploaded MIS — showing published figures'}</p>}
       <SourceLinks ids={op.sources} />
     </Card>
+  )
+}
+
+const OP_LABEL = { METRO: 'Metro', AMTS: 'AMTS', BRTS: 'BRTS' }
+
+// Only dates that have data are offered; list is newest first.
+function DatePicker({ dates, value, onChange }) {
+  const i = dates.findIndex((d) => d.date === value)
+  const btn = 'rounded p-1 text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent'
+  return (
+    <span className="inline-flex items-center gap-0.5 align-middle">
+      <button onClick={() => onChange(dates[i + 1].date)} disabled={i >= dates.length - 1} className={btn} title="Previous day with data" aria-label="Previous day"><ChevronLeft className="h-4 w-4" /></button>
+      <select value={value} onChange={(e) => onChange(e.target.value)} aria-label="Reporting day"
+        className="rounded-md border border-slate-300 bg-white py-0.5 pl-2 pr-1 text-sm font-medium text-slate-700 focus:border-indigo-500 focus:outline-none">
+        {dates.map((d) => (
+          <option key={d.date} value={d.date}>
+            {fmtDate(d.date, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} · {d.operators.length ? d.operators.map((k) => OP_LABEL[k]).join(' + ') : 'no day figures'}
+          </option>
+        ))}
+      </select>
+      <button onClick={() => onChange(dates[i - 1].date)} disabled={i <= 0} className={btn} title="Next day with data" aria-label="Next day"><ChevronRight className="h-4 w-4" /></button>
+    </span>
   )
 }
 
@@ -179,7 +201,10 @@ export default function App() {
   const [provider, setProvider] = useState(() => localStorage.getItem('fatafat.provider') ?? 'gemini')
   const [keys, setKeys] = useState(() => ({ gemini: localStorage.getItem('fatafat.key.gemini') ?? import.meta.env.VITE_GEMINI_API_KEY ?? '', claude: localStorage.getItem('fatafat.key.claude') ?? '' }))
   const apiKey = keys[provider]
-  const [dataset, setDataset] = useState(publishedDataset)
+  const [uploadRows, setUploadRows] = useState(null)
+  const dates = useMemo(() => availableDates(uploadRows), [uploadRows])
+  const [date, setDate] = useState(() => publishedDataset().date)
+  const dataset = useMemo(() => (uploadRows ? datasetFromRows(uploadRows, date) : publishedDataset(date)), [uploadRows, date])
   const [weather, setWeather] = useState(weatherSnapshot)
   const [today, setToday] = useState(null)
   const [liveReady, setLiveReady] = useState(false)
@@ -242,7 +267,10 @@ export default function App() {
   const onUpload = async (e) => {
     const f = e.target.files?.[0]
     if (!f) return
-    try { setDataset(datasetFromCsv(await f.text(), publishedDataset())); setUploadErr('') }
+    try {
+      const rows = parseMisCsv(await f.text())
+      setUploadRows(rows); setDate(availableDates(rows)[0].date); setUploadErr('')
+    }
     catch (err) { setUploadErr(err.message) }
     e.target.value = ''
   }
@@ -277,8 +305,8 @@ export default function App() {
             <h1 className="text-xl font-semibold tracking-tight">Fatafat <span className="text-indigo-600">Brief</span> <span className="text-sm font-normal text-slate-500">· Unified Morning Brief for Ahmedabad transit</span></h1>
             <p className="text-sm text-slate-500">
               {fmtDate(new Date().toISOString().slice(0, 10), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-              {' · '}Reporting day: <span className="font-medium text-slate-700">{fmtDate(dataset.date)}</span>
-              {dataset.origin === 'published' ? ' (latest day with published Metro + AMTS figures)' : ' (uploaded MIS)'}
+              {' · '}Reporting day <DatePicker dates={dates} value={dataset.date} onChange={setDate} />
+              {dataset.origin === 'published' ? ' published figures' : ' uploaded MIS'}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -307,7 +335,7 @@ export default function App() {
             <div className="text-[11px] text-slate-400">Metro daily journeys, {metroSpark.length} published days {analysis.metroDod != null && <span className={analysis.metroDod < 0 ? 'text-red-600' : 'text-emerald-600'}>· {fmtPct(analysis.metroDod)} DoD</span>}</div>
           </Kpi>
           <Kpi icon={IndianRupee} label="Total Revenue" value={fmtRs(analysis.revenueReported + analysis.revenueDerived)}
-            sub={`AMTS ${fmtRs(o.AMTS.revenueRs)} reported${analysis.revenueDerived ? ` · Metro ${fmtRs(o.METRO.revenueRs)} derived` : ''} · BRTS ${o.BRTS.revenueRs == null ? 'not published' : fmtRs(o.BRTS.revenueRs)}`}
+            sub={Object.values(o).map((op) => `${op.label} ${op.revenueRs == null ? 'not published' : `${fmtRs(op.revenueRs)}${op.revenueKind === 'derived' ? ' derived' : ' reported'}`}`).join(' · ')}
             badge={<KindBadge kind={analysis.revenueDerived ? 'derived' : 'day'} title="Metro revenue derived from published average fare" />}>
             <Sparkline data={revSpark} dataKey="revenue" type="bar" />
             <div className="text-[11px] text-slate-400">Metro annual fare revenue, FY23→FY26 <span className="text-emerald-600">· {fmtPct(analysis.fyRevGrowth)} YoY</span></div>
@@ -412,7 +440,7 @@ export default function App() {
             <div className="flex gap-2">
               <button onClick={downloadTemplate} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"><Download className="h-4 w-4" />CSV template</button>
               <button onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"><Upload className="h-4 w-4" />Load daily MIS</button>
-              {dataset.origin === 'uploaded' && <button onClick={() => setDataset(publishedDataset())} className="rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100">Reset to published</button>}
+              {dataset.origin === 'uploaded' && <button onClick={() => { setUploadRows(null); setDate(publishedDataset().date) }} className="rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100">Reset to published</button>}
               <input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={onUpload} />
             </div>
           </div>

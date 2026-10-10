@@ -30,7 +30,7 @@ export function ChartTip({ active, payload, label, unit = '', fmt = fmtInt }) {
   )
 }
 
-const TONE = {
+export const TONE = {
   bad: 'bg-red-50 text-red-700 rounded px-1',
   good: 'bg-emerald-50 text-emerald-700 rounded px-1',
   warn: 'bg-amber-50 text-amber-800 rounded px-1',
