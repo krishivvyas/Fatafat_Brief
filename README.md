@@ -72,7 +72,7 @@ date,operator,riders,revenue_rs,on_time_pct,incident
 Rainfall and temperature for Ahmedabad come from **Open-Meteo** (ERA5 archive plus today's forecast). A real snapshot is bundled for offline use, and the dashboard shows whether it is using **Live API** or **Cached** data.
 
 ### 7. English, हिन्दी and ગુજરાતી
-Use the **EN / हिं / ગુ** switch in the header. The choice is remembered in the browser, and everything changes language together:
+The app opens in **Gujarati** by default. Use the **EN / हिं / ગુ** switch in the header to change it. The choice is remembered in the browser, and everything changes language together:
 - the dashboard, operator cards, badges and buttons
 - the Executive Synthesis. The rule engine has its own Hindi and Gujarati text, and Gemini or Claude is told to write in the chosen language.
 - both WhatsApp messages, ready to forward in that language
@@ -112,7 +112,7 @@ Other scripts: `npm run build` (production build into `dist/`), `npm run preview
 3. Click **‹** in the date selector to go back a day. AMTS switches to *Not published* and the brief says the total is incomplete.
 4. Click **Full Report & Trends**. Scroll through the daily, monthly and yearly trends and their insights (for example, September looks down 2.3% but per day it is up 1.0%). Try **Print / Save PDF**.
 5. Click **Generate Ministry WhatsApp Brief**, then **Copy text**.
-6. Switch to **हिं** or **ગુ**. Everything, including the report and WhatsApp text, changes language.
+6. The app starts in **ગુજરાતી**. Switch to **EN** or **हिं** and everything, including the report and WhatsApp text, changes language.
 7. Turn on **Simulate Network Drop**. The brief falls back to the rule engine instantly.
 8. Click **CSV template**, fill in a few days, and use **Load daily MIS** to see the report rebuild from operator data.
 
@@ -176,7 +176,7 @@ React 19 · Vite 8 · Tailwind CSS 4 · Recharts · lucide-react · oxlint
 ## Limitations
 - **Thin public data:** see *Known gaps in public data* above. Most AMTS and BRTS trends need the operators' own MIS.
 - **Translations:** the Hindi and Gujarati text has not yet been reviewed by a native speaker. Fixes are one-line edits in `src/i18n.js`.
-- **AI brief in Hindi and Gujarati:** the prompt asks for the chosen language, but it has not been tested end-to-end with a live key yet. The rule-based brief is fully translated.
+- **AI brief in Hindi:** the Gujarati AI brief has been tested with Gemini; Hindi uses the same prompt but has not been tested end-to-end yet. The rule-based brief is fully translated in both.
 - **API key in the browser:** fine for a local demo, but not for a public deploy (see the warning in *Quick start*).
 - **No automated tests yet,** and the production bundle is over 500 kB (Vite warns about this).
 

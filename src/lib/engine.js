@@ -155,11 +155,14 @@ export const CSV_TEMPLATE =
   'YYYY-MM-DD,METRO,,,,\nYYYY-MM-DD,AMTS,,,,\nYYYY-MM-DD,BRTS,,,,\n'
 
 // Returns the valid rows (operator upper-cased); throws on an unusable file.
+// Errors carry an i18n code so the UI can show them in the chosen language.
+const csvError = (message, code, arg) => Object.assign(new Error(message), { code, arg })
+
 export function parseMisCsv(text) {
   const lines = text.trim().split(/\r?\n/).filter(Boolean)
   const header = lines.shift().split(',').map((h) => h.trim().toLowerCase())
   const need = ['date', 'operator', 'riders']
-  for (const n of need) if (!header.includes(n)) throw new Error(`CSV missing column "${n}"`)
+  for (const n of need) if (!header.includes(n)) throw csvError(`CSV missing column "${n}"`, 'csvMissingCol', n)
   const rows = lines.map((l) => {
     const cells = l.split(',')
     const o = {}
@@ -171,7 +174,7 @@ export function parseMisCsv(text) {
     return o
   })
   const valid = rows.filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.date) && ['METRO', 'AMTS', 'BRTS'].includes(r.operator))
-  if (!valid.length) throw new Error('No valid rows (need date YYYY-MM-DD and operator METRO/AMTS/BRTS)')
+  if (!valid.length) throw csvError('No valid rows (need date YYYY-MM-DD and operator METRO/AMTS/BRTS)', 'csvNoRows')
   return valid
 }
 

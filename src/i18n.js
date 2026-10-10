@@ -14,6 +14,7 @@ const en = {
   opMETRO: 'Metro', opAMTS: 'AMTS', opBRTS: 'BRTS',
 
   // header
+  pageTitle: 'Fatafat Brief — Unified Morning Brief',
   tagline: 'Unified Morning Brief for Ahmedabad transit',
   reportingDay: 'Reporting day',
   originPublished: 'published figures',
@@ -75,6 +76,8 @@ const en = {
   srcUploaded: 'Uploaded operator MIS',
   csvTemplate: 'CSV template', loadMis: 'Load daily MIS', resetPublished: 'Reset to published',
   uploadedMis: 'Uploaded operator MIS', you: 'You',
+  csvMissingCol: (n) => `CSV missing column "${n}"`,
+  csvNoRows: 'No valid rows (need date YYYY-MM-DD and operator METRO/AMTS/BRTS)',
 
   // modals
   ministryTitle: 'Ministry WhatsApp Brief',
@@ -241,6 +244,7 @@ const hi = {
   lakh: 'लाख', cr: 'करोड़', and: ' और ', stop: '। ', dot: '।',
   opMETRO: 'मेट्रो', opAMTS: 'AMTS', opBRTS: 'BRTS',
 
+  pageTitle: 'Fatafat Brief — एकीकृत सुबह की ब्रीफ़',
   tagline: 'अहमदाबाद परिवहन की एकीकृत सुबह की ब्रीफ़',
   reportingDay: 'रिपोर्टिंग दिन',
   originPublished: 'प्रकाशित आँकड़े',
@@ -298,6 +302,8 @@ const hi = {
   srcUploaded: 'अपलोड किया गया ऑपरेटर MIS',
   csvTemplate: 'CSV टेम्पलेट', loadMis: 'दैनिक MIS लोड करें', resetPublished: 'प्रकाशित पर वापस जाएँ',
   uploadedMis: 'अपलोड किया गया ऑपरेटर MIS', you: 'आप',
+  csvMissingCol: (n) => `CSV में "${n}" कॉलम नहीं है`,
+  csvNoRows: 'कोई मान्य पंक्ति नहीं (तारीख़ YYYY-MM-DD और ऑपरेटर METRO/AMTS/BRTS चाहिए)',
 
   ministryTitle: 'मंत्रालय WhatsApp ब्रीफ़',
   opsTitle: 'ऑप्स टीम ब्रीफ़ (केवल अपवाद)',
@@ -456,6 +462,7 @@ const gu = {
   lakh: 'લાખ', cr: 'કરોડ', and: ' અને ', stop: '. ', dot: '.',
   opMETRO: 'મેટ્રો', opAMTS: 'AMTS', opBRTS: 'BRTS',
 
+  pageTitle: 'Fatafat Brief — સંકલિત સવારનું બ્રીફ',
   tagline: 'અમદાવાદ પરિવહનનું સંકલિત સવારનું બ્રીફ',
   reportingDay: 'રિપોર્ટિંગ દિવસ',
   originPublished: 'પ્રકાશિત આંકડા',
@@ -513,6 +520,8 @@ const gu = {
   srcUploaded: 'અપલોડ કરેલ ઓપરેટર MIS',
   csvTemplate: 'CSV ટેમ્પલેટ', loadMis: 'દૈનિક MIS લોડ કરો', resetPublished: 'પ્રકાશિત પર પાછા જાઓ',
   uploadedMis: 'અપલોડ કરેલ ઓપરેટર MIS', you: 'તમે',
+  csvMissingCol: (n) => `CSV માં "${n}" કૉલમ નથી`,
+  csvNoRows: 'કોઈ માન્ય પંક્તિ નથી (તારીખ YYYY-MM-DD અને ઓપરેટર METRO/AMTS/BRTS જરૂરી)',
 
   ministryTitle: 'મંત્રાલય WhatsApp બ્રીફ',
   opsTitle: 'ઓપ્સ ટીમ બ્રીફ (ફક્ત અપવાદ)',

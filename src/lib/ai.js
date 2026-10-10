@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { GoogleGenAI } from '@google/genai'
 import { SOURCES } from '../data/published.js'
-import { LANGS } from '../i18n.js'
+import { LANGS, makeT } from '../i18n.js'
 
 const SYSTEM = `You write the "Two-Minute Morning Brief" for Ahmedabad's transit leadership (Metro/GMRC, AMTS, Janmarg BRTS).
 Rules:
@@ -20,7 +20,8 @@ export const PROVIDERS = {
 const r1 = (x) => (x == null ? null : Math.round(x * 10) / 10)
 const r2 = (x) => (x == null ? null : Math.round(x * 100) / 100)
 const inr = (x) => (x == null ? null : Math.round(x).toLocaleString('en-IN'))
-const rs = (x) => (x == null ? null : x >= 1e5 ? `₹${(x / 1e5).toFixed(2)} lakh` : `₹${inr(x)}`)
+// Lakh in the brief's language, so the model doesn't copy an English unit into Hindi/Gujarati text.
+const rs = (x, lang) => (x == null ? null : x >= 1e5 ? `₹${(x / 1e5).toFixed(2)} ${makeT(lang)('lakh')}` : `₹${inr(x)}`)
 
 function buildPayload(dataset, analysis, today) {
   return {
@@ -29,7 +30,7 @@ function buildPayload(dataset, analysis, today) {
     operators: Object.fromEntries(
       Object.entries(dataset.operators).map(([k, o]) => [
         k,
-        { riders: inr(o.riders), ridersKind: o.ridersKind, ridersNote: o.ridersNote, revenue: rs(o.revenueRs), revenueKind: o.revenueKind, revenueNote: o.revenueNote, onTimePct: o.otpPct, onTimeNote: o.otpNote, highlight: o.highlight, facts: Object.fromEntries(o.facts) },
+        { riders: inr(o.riders), ridersKind: o.ridersKind, ridersNote: o.ridersNote, revenue: rs(o.revenueRs, dataset.lang ?? 'en'), revenueKind: o.revenueKind, revenueNote: o.revenueNote, onTimePct: o.otpPct, onTimeNote: o.otpNote, highlight: o.highlight, facts: Object.fromEntries(o.facts) },
       ]),
     ),
     metroDailySeries: dataset.operators.METRO.series.map((d) => ({ date: d.date, riders: inr(d.riders) })),
@@ -56,11 +57,12 @@ function buildPayload(dataset, analysis, today) {
 // Keys are stored only in this browser's localStorage.
 export async function aiBrief({ provider, apiKey, dataset, analysis, today, signal }) {
   const lang = LANGS[dataset.lang] ?? LANGS.en
-  const language = dataset.lang && dataset.lang !== 'en'
-    ? ` Write it in ${lang.aiName}. Keep the names AMTS, BRTS and GMRC in Latin letters, write digits as 0-9, and keep the [[ ]] markers.`
-    : ''
-  const prompt = `Data:\n${JSON.stringify(buildPayload(dataset, analysis, today), null, 1)}\n\nWrite the brief.${language}`
-  const text = provider === 'gemini' ? await geminiText(apiKey, prompt, signal) : await claudeText(apiKey, prompt, signal)
+  // The language rule goes in the system prompt so it outranks the (English) field names in the data.
+  const system = dataset.lang && dataset.lang !== 'en'
+    ? `${SYSTEM}\n- Write the entire brief in ${lang.aiName}, never in English. Keep the names AMTS, BRTS and GMRC in Latin letters, write digits as 0-9, and keep the [[ ]] markers.`
+    : SYSTEM
+  const prompt = `Data:\n${JSON.stringify(buildPayload(dataset, analysis, today), null, 1)}\n\nWrite the brief in ${lang.aiName}.`
+  const text = provider === 'gemini' ? await geminiText(apiKey, system, prompt, signal) : await claudeText(apiKey, system, prompt, signal)
   if (!text) throw new Error('Empty response')
   return parseMarked(text)
 }
@@ -68,7 +70,7 @@ export async function aiBrief({ provider, apiKey, dataset, analysis, today, sign
 // Gemini sometimes answers 503 "high demand"; try the next model before giving up.
 const GEMINI_CHAIN = ['gemini-3.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash']
 
-async function geminiText(apiKey, prompt, signal) {
+async function geminiText(apiKey, system, prompt, signal) {
   const ai = new GoogleGenAI({ apiKey })
   let lastErr
   for (const model of GEMINI_CHAIN) {
@@ -76,7 +78,7 @@ async function geminiText(apiKey, prompt, signal) {
       const res = await ai.models.generateContent({
         model,
         contents: prompt,
-        config: { systemInstruction: SYSTEM, abortSignal: signal },
+        config: { systemInstruction: system, abortSignal: signal },
       })
       PROVIDERS.gemini.model = model
       return (res.text ?? '').trim()
@@ -88,7 +90,7 @@ async function geminiText(apiKey, prompt, signal) {
   throw lastErr
 }
 
-async function claudeText(apiKey, prompt, signal) {
+async function claudeText(apiKey, system, prompt, signal) {
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true })
   const res = await client.beta.messages.create(
     {
@@ -97,7 +99,7 @@ async function claudeText(apiKey, prompt, signal) {
       output_config: { effort: 'low' },
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
-      system: SYSTEM,
+      system,
       messages: [{ role: 'user', content: prompt }],
     },
     { signal, timeout: 60_000 },

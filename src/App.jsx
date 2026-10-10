@@ -219,9 +219,12 @@ export default function App() {
   const [provider, setProvider] = useState(() => localStorage.getItem('fatafat.provider') ?? 'gemini')
   const [keys, setKeys] = useState(() => ({ gemini: localStorage.getItem('fatafat.key.gemini') ?? import.meta.env.VITE_GEMINI_API_KEY ?? '', claude: localStorage.getItem('fatafat.key.claude') ?? '' }))
   const apiKey = keys[provider]
-  const [lang, setLang] = useState(() => (LANGS[localStorage.getItem('fatafat.lang')] ? localStorage.getItem('fatafat.lang') : 'en'))
+  // Gujarati unless the visitor has picked a language. Only an explicit pick is saved
+  // (the old 'fatafat.lang' key was written on every visit, so it is ignored).
+  const [lang, setLang] = useState(() => (LANGS[localStorage.getItem('fatafat.language')] ? localStorage.getItem('fatafat.language') : 'gu'))
+  const chooseLang = (l) => { setLang(l); localStorage.setItem('fatafat.language', l) }
   const { t, date: D, short, rs } = useMemo(() => i18nFor(lang), [lang])
-  useEffect(() => { localStorage.setItem('fatafat.lang', lang); document.documentElement.lang = lang }, [lang])
+  useEffect(() => { document.documentElement.lang = lang; document.title = t('pageTitle') }, [lang, t])
   const [uploadRows, setUploadRows] = useState(null)
   const dates = useMemo(() => availableDates(uploadRows), [uploadRows])
   const [date, setDate] = useState(() => publishedDataset().date)
@@ -232,7 +235,7 @@ export default function App() {
   const [brief, setBrief] = useState({ segs: [], engine: 'rule', note: '' })
   const [loading, setLoading] = useState(false)
   const [modal, setModal] = useState(null)
-  const [uploadErr, setUploadErr] = useState('')
+  const [uploadErr, setUploadErr] = useState(null)
   const fileRef = useRef(null)
   const closeModal = useCallback(() => setModal(null), [])
 
@@ -268,18 +271,25 @@ export default function App() {
 
   const analysis = useMemo(() => analyse(dataset, weather), [dataset, weather])
 
+  // Only the latest request may set the brief: switching language or date cancels the
+  // AI call still in flight, so an older (e.g. English) answer can't land on top.
+  const briefCtl = useRef(null)
   const generateBrief = useCallback(async () => {
+    briefCtl.current?.abort()
+    const ctl = (briefCtl.current = new AbortController())
     const rule = ruleBrief(dataset, analysis, today)
-    if (!online) { setBrief({ segs: rule, engine: 'offline', note: t('noteOffline') }); return }
-    if (!apiKey) { setBrief({ segs: rule, engine: 'rule', note: t('noteNoKey', PROVIDERS[provider].label) }); return }
+    if (!online) { setLoading(false); setBrief({ segs: rule, engine: 'offline', note: t('noteOffline') }); return }
+    if (!apiKey) { setLoading(false); setBrief({ segs: rule, engine: 'rule', note: t('noteNoKey', PROVIDERS[provider].label) }); return }
     setLoading(true)
     try {
-      const segs = await aiBrief({ provider, apiKey, dataset, analysis, today })
+      const segs = await aiBrief({ provider, apiKey, dataset, analysis, today, signal: ctl.signal })
+      if (ctl.signal.aborted) return
       setBrief({ segs, engine: 'ai', note: t('noteAi', { p: PROVIDERS[provider].label, m: PROVIDERS[provider].model }) })
     } catch (err) {
+      if (ctl.signal.aborted) return
       setBrief({ segs: rule, engine: 'fallback', note: t('noteFallback', err.message) })
     } finally {
-      setLoading(false)
+      if (!ctl.signal.aborted) setLoading(false)
     }
   }, [dataset, analysis, today, online, apiKey, provider, t])
 
@@ -291,9 +301,9 @@ export default function App() {
     if (!f) return
     try {
       const rows = parseMisCsv(await f.text())
-      setUploadRows(rows); setDate(availableDates(rows)[0].date); setUploadErr('')
+      setUploadRows(rows); setDate(availableDates(rows)[0].date); setUploadErr(null)
     }
-    catch (err) { setUploadErr(err.message) }
+    catch (err) { setUploadErr(err) }
     e.target.value = ''
   }
   const downloadTemplate = () => {
@@ -332,7 +342,7 @@ export default function App() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <LangSwitch value={lang} onChange={setLang} />
+            <LangSwitch value={lang} onChange={chooseLang} />
             <button onClick={() => setModal('settings')} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
               <KeyRound className="h-4 w-4" />{apiKey ? t('keySet', PROVIDERS[provider].label.split(' ')[1]) : t('addAiKey')}
             </button>
@@ -467,7 +477,7 @@ export default function App() {
               <input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={onUpload} />
             </div>
           </div>
-          {uploadErr && <p className="mt-2 text-sm text-red-600">{uploadErr}</p>}
+          {uploadErr && <p className="mt-2 text-sm text-red-600">{uploadErr.code ? t(uploadErr.code, uploadErr.arg) : uploadErr.message}</p>}
           <ul className="mt-4 grid gap-2 md:grid-cols-2">
             {Object.values(SOURCES).map((s) => (
               <li key={s.url} className="text-xs"><a href={s.url} target="_blank" rel="noreferrer" className="font-medium text-indigo-600 hover:underline">{s.title}</a><span className="text-slate-500"> — {s.publisher}, {s.date}</span></li>
@@ -480,7 +490,7 @@ export default function App() {
       {modal === 'ops' && <WhatsAppModal title={t('opsTitle')} text={opsWhatsApp(dataset, analysis, today)} onClose={() => setModal(null)} />}
       {modal === 'settings' && <SettingsModal provider={provider} keys={keys} onSave={saveSettings} onClose={() => setModal(null)} />}
     </div>
-    {modal === 'report' && <Report dataset={dataset} analysis={analysis} weather={weather} brief={brief} onClose={closeModal} />}
+    {modal === 'report' && <Report dataset={dataset} analysis={analysis} weather={weather} brief={brief} loading={loading} onClose={closeModal} />}
     </LangContext.Provider>
   )
 }

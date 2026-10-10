@@ -75,7 +75,7 @@ function Bars({ data, x, y, unit, fmt, height = 'h-44' }) {
   )
 }
 
-export default function Report({ dataset, analysis, weather, brief, onClose }) {
+export default function Report({ dataset, analysis, weather, brief, loading, onClose }) {
   const { lang, t, date, short, rs } = useI18n()
   const tr = useMemo(() => trends(dataset, weather), [dataset, weather])
   const ins = useMemo(() => insights(dataset, analysis, tr), [dataset, analysis, tr])
@@ -126,8 +126,12 @@ export default function Report({ dataset, analysis, weather, brief, onClose }) {
 
         {/* 1. Summary */}
         <Section id="summary" n={1} title={t('secSummary')}>
-          <Segments segs={brief.segs} />
-          <p className="text-xs text-slate-400">{brief.note}</p>
+          {loading ? <p className="animate-pulse text-sm text-slate-400">{t('synthesising')}</p> : (
+            <>
+              <Segments segs={brief.segs} />
+              <p className="text-xs text-slate-400">{brief.note}</p>
+            </>
+          )}
           <Insights title={t('keyTakeaways')} items={ins.summary} />
           <Table
             head={[t('thOperator'), t('thRiders'), t('thRevenue'), t('thOnTime'), t('thShare')]}
