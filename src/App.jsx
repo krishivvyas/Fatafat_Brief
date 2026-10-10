@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
 import {
   TrainFront, Bus, BusFront, Users, IndianRupee, CloudRain, Sparkles, WifiOff, Wifi, MessageCircle,
-  ClipboardList, X, Copy, Check, Upload, Download, KeyRound, ExternalLink, AlertTriangle, RefreshCw, Database, Info,
+  ClipboardList, X, Copy, Check, Upload, Download, KeyRound, ExternalLink, AlertTriangle, RefreshCw, Database, Info, FileText,
 } from 'lucide-react'
 import { SOURCES, METRO } from './data/published.js'
 import {
@@ -10,37 +10,10 @@ import {
   fetchWeatherArchive, fetchTodayForecast, weatherSnapshot, fmtInt, fmtRs, fmtPct, fmtDate,
 } from './lib/engine.js'
 import { aiBrief, PROVIDERS } from './lib/ai.js'
-
-const INDIGO = '#4f46e5'
-const SLATE = '#94a3b8'
-const shortDate = (d) => fmtDate(d, { day: 'numeric', month: 'short' })
+import { INDIGO, SLATE, shortDate, Card, KindBadge, ChartTip, Segments } from './ui.jsx'
+import Report from './Report.jsx'
 
 // ---------------- small building blocks ----------------
-function Card({ className = '', children }) {
-  return <div className={`bg-white rounded-xl shadow-sm border border-slate-200 p-6 ${className}`}>{children}</div>
-}
-
-const KIND_STYLE = {
-  day: ['Published (day)', 'bg-emerald-50 text-emerald-700 ring-emerald-200'],
-  derived: ['Derived', 'bg-amber-50 text-amber-700 ring-amber-200'],
-  average: ['Published avg', 'bg-sky-50 text-sky-700 ring-sky-200'],
-  none: ['Not published', 'bg-slate-100 text-slate-500 ring-slate-200'],
-}
-function KindBadge({ kind, title }) {
-  const [label, cls] = KIND_STYLE[kind] ?? KIND_STYLE.none
-  return <span title={title} className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ${cls}`}>{label}</span>
-}
-
-function ChartTip({ active, payload, label, unit = '' }) {
-  if (!active || !payload?.length) return null
-  return (
-    <div className="rounded-md bg-slate-900 px-2 py-1 text-[11px] text-white shadow">
-      <div className="text-slate-300">{label}</div>
-      <div className="font-semibold">{fmtInt(payload[0].value)}{unit}</div>
-    </div>
-  )
-}
-
 function Sparkline({ data, dataKey, type = 'line', unit }) {
   return (
     <div className="h-12 w-full">
@@ -75,25 +48,6 @@ function Kpi({ icon: Icon, label, value, sub, badge, children }) {
       <div className="text-xs text-slate-500">{sub}</div>
       {children}
     </Card>
-  )
-}
-
-const TONE = {
-  bad: 'bg-red-50 text-red-700 rounded px-1',
-  good: 'bg-emerald-50 text-emerald-700 rounded px-1',
-  warn: 'bg-amber-50 text-amber-800 rounded px-1',
-}
-function Segments({ segs }) {
-  return (
-    <p className="text-[15px] leading-7 text-slate-700">
-      {segs.map((s, i) => {
-        // also flag any stray negative percentages
-        if (!s.tone && /-\d+(\.\d+)?%/.test(s.t)) {
-          return s.t.split(/(-\d+(?:\.\d+)?%)/).map((p, j) => (/^-\d/.test(p) ? <span key={`${i}-${j}`} className={TONE.bad}>{p}</span> : p))
-        }
-        return s.tone ? <span key={i} className={TONE[s.tone]}>{s.t}</span> : <span key={i}>{s.t}</span>
-      })}
-    </p>
   )
 }
 
@@ -234,6 +188,7 @@ export default function App() {
   const [modal, setModal] = useState(null)
   const [uploadErr, setUploadErr] = useState('')
   const fileRef = useRef(null)
+  const closeModal = useCallback(() => setModal(null), [])
 
   const saveSettings = (p, k) => {
     setProvider(p); setKeys(k)
@@ -313,7 +268,8 @@ export default function App() {
   const EngineIcon = engineBadge[1]
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <>
+    <div className={`min-h-screen bg-slate-50 text-slate-900 ${modal === 'report' ? 'print:hidden' : ''}`}>
       {/* Header */}
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-4">
@@ -380,12 +336,15 @@ export default function App() {
             ) : <Segments segs={brief.segs} />}
           </div>
           <p className="mt-3 text-xs text-slate-400">{brief.note}</p>
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+          <div className="mt-6 grid gap-3 sm:grid-cols-3">
             <button onClick={() => setModal('ministry')} className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-3 text-sm font-medium text-white shadow-sm hover:bg-indigo-700">
               <MessageCircle className="h-4 w-4" />Generate Ministry WhatsApp Brief
             </button>
             <button onClick={() => setModal('ops')} className="inline-flex items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-medium text-indigo-700 hover:bg-indigo-100">
               <ClipboardList className="h-4 w-4" />Generate Ops Team Brief
+            </button>
+            <button onClick={() => setModal('report')} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              <FileText className="h-4 w-4" />Full Report &amp; Trends
             </button>
           </div>
         </Card>
@@ -470,5 +429,7 @@ export default function App() {
       {modal === 'ops' && <WhatsAppModal title="Ops Team Brief (exceptions only)" text={opsWhatsApp(dataset, analysis, today)} onClose={() => setModal(null)} />}
       {modal === 'settings' && <SettingsModal provider={provider} keys={keys} onSave={saveSettings} onClose={() => setModal(null)} />}
     </div>
+    {modal === 'report' && <Report dataset={dataset} analysis={analysis} weather={weather} brief={brief} onClose={closeModal} />}
+    </>
   )
 }

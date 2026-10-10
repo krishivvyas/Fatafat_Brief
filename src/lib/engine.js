@@ -227,6 +227,38 @@ export function analyse(ds, weather) {
   }
 }
 
+// ---------- trends (full report) ----------
+// Daily: each operator's day-level series (published, or from the uploaded MIS).
+// Monthly: published month totals, plus month averages of the reported days
+// (derived, so the day count is kept alongside). Yearly: published FY totals.
+export function trends(ds, weather) {
+  const daily = {}, monthAvg = {}
+  for (const [k, o] of Object.entries(ds.operators)) {
+    const s = o.series.filter((d) => d.riders != null)
+    if (s.length < 2) continue
+    daily[k] = s.map((d, i) => ({ ...d, change: i ? pctChange(d.riders, s[i - 1].riders) : null, rainMm: weatherOn(weather, d.date)?.rainMm ?? null }))
+    const months = {}
+    for (const d of s) (months[d.date.slice(0, 7)] ??= []).push(d.riders)
+    monthAvg[k] = Object.entries(months).map(([month, xs]) => ({ month, days: xs.length, avg: mean(xs), max: Math.max(...xs) }))
+  }
+
+  const published = [['2026-08', METRO.august2026], ['2026-09', METRO.september2026]]
+  const metroMonths = published.map(([month, m], i) => ({
+    month, ...m,
+    change: i ? pctChange(m.passengersLakh, published[i - 1][1].passengersLakh) : null,
+  }))
+
+  const fy = METRO.yearly.map((y, i, a) => ({
+    ...y,
+    tripsChange: i ? pctChange(y.passengersLakh, a[i - 1].passengersLakh) : null,
+    revChange: i ? pctChange(y.revenueCr, a[i - 1].revenueCr) : null,
+    avgFare: (y.revenueCr * 1e7) / (y.passengersLakh * 1e5),
+  }))
+  const avgDaily = METRO.avgDailyByYear.map((y, i, a) => ({ ...y, change: i ? pctChange(y.riders, a[i - 1].riders) : null }))
+
+  return { daily, monthAvg, metroMonths, fy, avgDaily, eventPeaks: METRO.eventPeaks }
+}
+
 // ---------- rule-based brief (offline-safe) ----------
 // Returns an array of segments: { t: text, tone?: 'bad' | 'good' | 'warn' }
 export function ruleBrief(ds, a, today) {

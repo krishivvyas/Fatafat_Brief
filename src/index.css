@@ -4,3 +4,8 @@
   /* Inter via Google Fonts; system fonts keep the page readable offline */
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
 }
+
+@media print {
+  @page { size: A4; margin: 12mm; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
