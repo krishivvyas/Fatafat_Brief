@@ -99,6 +99,13 @@ Other scripts: `npm run build` (production build into `dist/`), `npm run preview
 
 > ⚠️ Vite copies `VITE_` variables into the built JavaScript, so anyone visiting a deployed copy can read the key. Use a restricted key for public deploys.
 
+### Deploy on Vercel
+1. Push the repo to GitHub.
+2. On [vercel.com](https://vercel.com), choose **Add New → Project** and import the repo. Vercel detects Vite (build `npm run build`, output `dist`).
+3. Click **Deploy**.
+
+**Do not add `VITE_GEMINI_API_KEY` in Vercel's environment variables.** It would be copied into the public JavaScript, where anyone can read it. The deployed site uses the rule-based brief by default. To show the Gemini brief, click **Add AI key** on the live site and paste your key. It is stored only in that browser.
+
 ### Two-minute demo
 1. Open the app. The dashboard shows **Mon, 10 Aug 2026**, the latest day with both Metro and AMTS figures.
 2. Read the **Executive Synthesis**: AMTS's record day, Metro's highest day in the series, and the Tiranga Yatra disruption.
